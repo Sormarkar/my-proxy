@@ -28,9 +28,6 @@ app.get("/api/proxy", async (req, res) => {
 
     const data = await response.text();
 
-    // IMPORTANT:
-    // ❌ NO XML MODIFYING HERE
-    // ONLY RETURN ORIGINAL MPD
     res.setHeader("Content-Type", "application/dash+xml");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
@@ -42,11 +39,17 @@ app.get("/api/proxy", async (req, res) => {
 });
 
 // =========================
-// SEGMENT PROXY (REQUIRED FOR OTT)
+// SEGMENT PROXY (IMPORTANT FIX FOR OTT)
 // =========================
 app.get("/api/proxy/*", async (req, res) => {
   try {
-    const url = req.params[0];
+    let url = req.params[0];
+
+    // 🔥 FIX: restore query string (?token, ?range, etc)
+    const qs = req.url.split("?")[1];
+    if (qs) {
+      url = url + "?" + qs;
+    }
 
     if (!url || !url.startsWith("http")) {
       return res.status(400).send("Invalid URL");
@@ -78,7 +81,7 @@ app.get("/api/proxy/*", async (req, res) => {
 });
 
 // =========================
-// PORT (RAILWAY)
+// RAILWAY PORT
 // =========================
 const port = process.env.PORT || 3000;
 
