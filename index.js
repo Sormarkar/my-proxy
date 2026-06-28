@@ -15,44 +15,23 @@ app.get("/api/proxy", async (req, res) => {
       return res.status(400).send("Missing URL or channel");
     }
 
+    // =========================
+    // FETCH WITHOUT USER-AGENT
+    // =========================
     const response = await fetch(url);
 
     if (!response.ok) {
-      return res.status(response.status).send("Upstream error");
+      return res
+        .status(response.status)
+        .send("Upstream error: " + response.status);
     }
 
-    // =========================
-    // COPY HEADERS (IMPORTANT)
-    // =========================
-    const headers = [
-      "content-type",
-      "content-length",
-      "content-range",
-      "accept-ranges",
-      "etag",
-      "last-modified"
-    ];
+    const data = await response.text();
 
-    headers.forEach((h) => {
-      const val = response.headers.get(h);
-      if (val) res.setHeader(h, val);
-    });
-
+    res.setHeader("Content-Type", "application/dash+xml");
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "no-cache");
 
-    // =========================
-    // STREAM LIKE PHP (CRITICAL FIX)
-    // =========================
-    const reader = response.body.getReader();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-
-    res.end();
+    res.send(data);
 
   } catch (err) {
     res.status(500).send("Crash: " + err.toString());
@@ -60,7 +39,10 @@ app.get("/api/proxy", async (req, res) => {
 });
 
 // =========================
+// IMPORTANT RAILWAY PORT
+// =========================
 const port = process.env.PORT || 3000;
+
 app.listen(port, "0.0.0.0", () => {
   console.log("Server running on port", port);
 });
