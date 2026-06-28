@@ -1,58 +1,66 @@
 const express = require("express");
 const app = express();
 
+/* =========================
+   FIX FETCH FOR RAILWAY
+========================= */
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
+
+/* =========================
+   CHANNEL LIST
+========================= */
 const channels = {
   HubSensasiHD:
     "https://ucdn.starhubgo.com/bpk-tv/HubSensasiHD/output/manifest.mpd"
 };
 
 /* =========================
-   HELPER: FETCH MPD
+   GLOBAL CORS
 ========================= */
-async function fetchMPD(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("MPD fetch failed: " + res.status);
-  return await res.text();
-}
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  next();
+});
 
 /* =========================
-   REWRITE MPD (IMPORTANT)
-   - force all segments go through proxy
-========================= */
-function rewriteMPD(mpdText, baseUrl, req) {
-  const proxyBase = `${req.protocol}://${req.get("host")}`;
-
-  return mpdText
-    // rewrite init / media / segments
-    .replace(/(https?:\/\/[^"\s]+)/g, (match) => {
-      return `${proxyBase}/api/segment?url=${encodeURIComponent(match)}`;
-    })
-    // handle relative paths (simple fix)
-    .replace(/media="([^"]+)"/g, (m, p1) => {
-      const full = new URL(p1, baseUrl).href;
-      return `media="${proxyBase}/api/segment?url=${encodeURIComponent(full)}"`;
-    });
-}
-
-/* =========================
-   MPD PROXY
+   MPD PROXY + REWRITE
 ========================= */
 app.get("/api/proxy", async (req, res) => {
   try {
-    const channel = req.query.channel;
-    const url = channels[channel] || req.query.url;
-
+    const url = channels[req.query.channel] || req.query.url;
     if (!url) return res.status(400).send("Missing URL");
 
-    const mpd = await fetchMPD(url);
-    const rewritten = rewriteMPD(mpd, url, req);
+    const upstream = await fetch(url);
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).send("Upstream " + upstream.status);
+    }
+
+    let mpd = await upstream.text();
+
+    const proxyBase = `${req.protocol}://${req.get("host")}`;
+
+    /* =========================
+       REWRITE ALL URLS IN MPD
+    ========================= */
+    mpd = mpd.replace(/https?:\/\/[^"\s]+/g, (u) => {
+      return `${proxyBase}/api/segment?url=${encodeURIComponent(u)}`;
+    });
+
+    /* fix relative media="..." */
+    mpd = mpd.replace(/media="([^"]+)"/g, (m, p1) => {
+      const full = new URL(p1, url).href;
+      return `media="${proxyBase}/api/segment?url=${encodeURIComponent(full)}"`;
+    });
 
     res.setHeader("Content-Type", "application/dash+xml");
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(mpd);
 
-    res.send(rewritten);
   } catch (err) {
-    res.status(500).send("Crash: " + err.toString());
+    console.log("MPD ERROR:", err);
+    res.status(500).send("MPD crash");
   }
 });
 
@@ -62,22 +70,24 @@ app.get("/api/proxy", async (req, res) => {
 app.get("/api/segment", async (req, res) => {
   try {
     const url = req.query.url;
-    if (!url) return res.status(400).send("Missing segment URL");
+    if (!url) return res.status(400).send("Missing URL");
 
     const upstream = await fetch(url);
 
     if (!upstream.ok) {
-      return res.status(upstream.status).send("Segment error " + upstream.status);
+      return res.status(upstream.status).send("Segment " + upstream.status);
     }
 
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/octet-stream");
-
     const buffer = Buffer.from(await upstream.arrayBuffer());
-    res.send(buffer);
+
+    res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=60");
+
+    res.end(buffer);
 
   } catch (err) {
-    res.status(500).send("Segment crash: " + err.toString());
+    console.log("SEGMENT ERROR:", err);
+    res.status(500).send("Segment crash");
   }
 });
 
