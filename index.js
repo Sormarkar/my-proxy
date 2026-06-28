@@ -6,6 +6,9 @@ const channels = {
     "https://ucdn.starhubgo.com/bpk-tv/HubSensasiHD/output/manifest.mpd"
 };
 
+// =========================
+// MANIFEST PROXY (SAFE)
+// =========================
 app.get("/api/proxy", async (req, res) => {
   try {
     const channel = req.query.channel;
@@ -23,29 +26,11 @@ app.get("/api/proxy", async (req, res) => {
         .send("Upstream error: " + response.status);
     }
 
-    let data = await response.text();
+    const data = await response.text();
 
-    // =========================
-    // FIX 1: remove BaseURL tag (important for OTT)
-    // =========================
-    data = data.replace(/<BaseURL>.*?<\/BaseURL>/g, "");
-
-    // =========================
-    // FIX 2: rewrite absolute CDN to proxy
-    // =========================
-    data = data.replaceAll(
-      "https://ucdn.starhubgo.com",
-      `${req.protocol}://${req.get("host")}/api/proxy`
-    );
-
-    // =========================
-    // FIX 3: force relative segment handling
-    // =========================
-    data = data.replaceAll(
-      '"/',
-      `"${req.protocol}://${req.get("host")}/api/proxy/https://ucdn.starhubgo.com/`
-    );
-
+    // IMPORTANT:
+    // ❌ NO XML MODIFYING HERE
+    // ONLY RETURN ORIGINAL MPD
     res.setHeader("Content-Type", "application/dash+xml");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
@@ -57,7 +42,7 @@ app.get("/api/proxy", async (req, res) => {
 });
 
 // =========================
-// FULL REVERSE PROXY (SEGMENTS)
+// SEGMENT PROXY (REQUIRED FOR OTT)
 // =========================
 app.get("/api/proxy/*", async (req, res) => {
   try {
@@ -78,7 +63,10 @@ app.get("/api/proxy/*", async (req, res) => {
     const data = await response.arrayBuffer();
 
     const contentType = response.headers.get("content-type");
-    if (contentType) res.setHeader("Content-Type", contentType);
+
+    if (contentType) {
+      res.setHeader("Content-Type", contentType);
+    }
 
     res.setHeader("Access-Control-Allow-Origin", "*");
 
@@ -89,6 +77,9 @@ app.get("/api/proxy/*", async (req, res) => {
   }
 });
 
+// =========================
+// PORT (RAILWAY)
+// =========================
 const port = process.env.PORT || 3000;
 
 app.listen(port, "0.0.0.0", () => {
