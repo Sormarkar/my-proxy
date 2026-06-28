@@ -15,19 +15,22 @@ app.get("/api/proxy", async (req, res) => {
       return res.status(400).send("Missing URL or channel");
     }
 
-    const response = await fetch(url, {
-      headers: {
-        ""
-      }
-    });
+    // =========================
+    // FETCH WITHOUT USER-AGENT
+    // =========================
+    const response = await fetch(url);
 
     if (!response.ok) {
-      return res.status(response.status).send("Upstream error");
+      return res
+        .status(response.status)
+        .send("Upstream error: " + response.status);
     }
 
     const data = await response.text();
 
     res.setHeader("Content-Type", "application/dash+xml");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
     res.send(data);
 
   } catch (err) {
@@ -35,7 +38,9 @@ app.get("/api/proxy", async (req, res) => {
   }
 });
 
-// IMPORTANT: Railway guna port env
+// =========================
+// IMPORTANT RAILWAY PORT
+// =========================
 const port = process.env.PORT || 3000;
 
 app.listen(port, "0.0.0.0", () => {
