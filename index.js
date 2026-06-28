@@ -15,9 +15,6 @@ app.get("/api/proxy", async (req, res) => {
       return res.status(400).send("Missing URL or channel");
     }
 
-    // =========================
-    // FETCH WITHOUT USER-AGENT
-    // =========================
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -26,12 +23,53 @@ app.get("/api/proxy", async (req, res) => {
         .send("Upstream error: " + response.status);
     }
 
-    const data = await response.text();
+    let data = await response.text();
+
+    // =========================
+    // 🔥 OTT FIX: rewrite domain inside MPD
+    // =========================
+    data = data.replaceAll(
+      "https://ucdn.starhubgo.com",
+      `${req.protocol}://${req.get("host")}/api/proxy`
+    );
 
     res.setHeader("Content-Type", "application/dash+xml");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     res.send(data);
+
+  } catch (err) {
+    res.status(500).send("Crash: " + err.toString());
+  }
+});
+
+// =========================
+// 🔥 NEW: FULL SEGMENT PROXY (IMPORTANT FOR OTT)
+// =========================
+app.get("/api/proxy/*", async (req, res) => {
+  try {
+    const url = req.params[0];
+
+    if (!url || !url.startsWith("http")) {
+      return res.status(400).send("Invalid URL");
+    }
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return res
+        .status(response.status)
+        .send("Upstream error: " + response.status);
+    }
+
+    const data = await response.arrayBuffer();
+
+    const contentType = response.headers.get("content-type");
+    if (contentType) res.setHeader("Content-Type", contentType);
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    res.send(Buffer.from(data));
 
   } catch (err) {
     res.status(500).send("Crash: " + err.toString());
