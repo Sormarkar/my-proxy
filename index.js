@@ -22,12 +22,10 @@ app.get("/api/proxy", async (req, res) => {
       return res.status(400).send("Missing URL or channel");
     }
 
-    const upstream = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*"
-      }
-    });
+    // =========================
+    // FETCH WITHOUT USER-AGENT
+    // =========================
+    const upstream = await fetch(url);
 
     if (!upstream.ok) {
       return res
@@ -36,9 +34,10 @@ app.get("/api/proxy", async (req, res) => {
     }
 
     // =========================
-    // COPY IMPORTANT HEADERS
+    // HEADERS FOR OTT
     // =========================
     const contentType = upstream.headers.get("content-type");
+
     if (contentType) {
       res.setHeader("Content-Type", contentType);
     }
@@ -47,7 +46,7 @@ app.get("/api/proxy", async (req, res) => {
     res.setHeader("Accept-Ranges", "bytes");
 
     // =========================
-    // STREAM (NOT TEXT)
+    // STREAM BINARY
     // =========================
     const reader = upstream.body.getReader();
 
@@ -68,7 +67,7 @@ app.get("/api/proxy", async (req, res) => {
 });
 
 // =========================
-// IMPORTANT RAILWAY PORT
+// PORT
 // =========================
 const port = process.env.PORT || 3000;
 
