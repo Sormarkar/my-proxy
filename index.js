@@ -26,11 +26,24 @@ app.get("/api/proxy", async (req, res) => {
     let data = await response.text();
 
     // =========================
-    // 🔥 OTT FIX: rewrite domain inside MPD
+    // FIX 1: remove BaseURL tag (important for OTT)
+    // =========================
+    data = data.replace(/<BaseURL>.*?<\/BaseURL>/g, "");
+
+    // =========================
+    // FIX 2: rewrite absolute CDN to proxy
     // =========================
     data = data.replaceAll(
       "https://ucdn.starhubgo.com",
       `${req.protocol}://${req.get("host")}/api/proxy`
+    );
+
+    // =========================
+    // FIX 3: force relative segment handling
+    // =========================
+    data = data.replaceAll(
+      '"/',
+      `"${req.protocol}://${req.get("host")}/api/proxy/https://ucdn.starhubgo.com/`
     );
 
     res.setHeader("Content-Type", "application/dash+xml");
@@ -44,7 +57,7 @@ app.get("/api/proxy", async (req, res) => {
 });
 
 // =========================
-// 🔥 NEW: FULL SEGMENT PROXY (IMPORTANT FOR OTT)
+// FULL REVERSE PROXY (SEGMENTS)
 // =========================
 app.get("/api/proxy/*", async (req, res) => {
   try {
@@ -76,9 +89,6 @@ app.get("/api/proxy/*", async (req, res) => {
   }
 });
 
-// =========================
-// IMPORTANT RAILWAY PORT
-// =========================
 const port = process.env.PORT || 3000;
 
 app.listen(port, "0.0.0.0", () => {
