@@ -1,37 +1,66 @@
 const express = require("express");
 const app = express();
 
+const fetch = global.fetch;
+
 const channels = {
   HubSensasiHD:
     "https://ucdn.starhubgo.com/bpk-tv/HubSensasiHD/output/manifest.mpd"
 };
 
+// =========================
+// MAIN PROXY (MANIFEST + SEGMENT)
+// =========================
 app.get("/api/proxy", async (req, res) => {
   try {
     const channel = req.query.channel;
-    const url = channels[channel] || req.query.url;
+    const baseUrl = channels[channel];
+
+    const url = baseUrl || req.query.url;
 
     if (!url) {
       return res.status(400).send("Missing URL or channel");
     }
 
-    // =========================
-    // FETCH WITHOUT USER-AGENT
-    // =========================
-    const response = await fetch(url);
+    const upstream = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*"
+      }
+    });
 
-    if (!response.ok) {
+    if (!upstream.ok) {
       return res
-        .status(response.status)
-        .send("Upstream error: " + response.status);
+        .status(upstream.status)
+        .send("Upstream error: " + upstream.status);
     }
 
-    const data = await response.text();
+    // =========================
+    // COPY IMPORTANT HEADERS
+    // =========================
+    const contentType = upstream.headers.get("content-type");
+    if (contentType) {
+      res.setHeader("Content-Type", contentType);
+    }
 
-    res.setHeader("Content-Type", "application/dash+xml");
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Accept-Ranges", "bytes");
 
-    res.send(data);
+    // =========================
+    // STREAM (NOT TEXT)
+    // =========================
+    const reader = upstream.body.getReader();
+
+    async function pump() {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    }
+
+    pump();
 
   } catch (err) {
     res.status(500).send("Crash: " + err.toString());
