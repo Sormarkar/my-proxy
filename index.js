@@ -17,7 +17,7 @@ app.get("/api/proxy", async (req, res) => {
 
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0"
+        ""
       }
     });
 
