@@ -6,43 +6,117 @@ const channels = {
     "https://ucdn.starhubgo.com/bpk-tv/HubSensasiHD/output/manifest.mpd"
 };
 
+// ==========================
+// MANIFEST PROXY
+// ==========================
 app.get("/api/proxy", async (req, res) => {
   try {
-    const channel = req.query.channel;
-    const url = channels[channel] || req.query.url;
+    const url = channels[req.query.channel] || req.query.url;
 
     if (!url) {
-      return res.status(400).send("Missing URL or channel");
+      return res.status(400).send("Missing URL");
     }
 
-    // =========================
-    // FETCH WITHOUT USER-AGENT
-    // =========================
     const response = await fetch(url);
 
     if (!response.ok) {
-      return res
-        .status(response.status)
-        .send("Upstream error: " + response.status);
+      return res.status(response.status).send("Upstream error");
     }
 
-    const data = await response.text();
+    let mpd = await response.text();
+
+    const base = url.substring(0, url.lastIndexOf("/") + 1);
+
+    // Rewrite BaseURL
+    mpd = mpd.replace(
+      /<BaseURL>(.*?)<\/BaseURL>/g,
+      (_, p1) =>
+        `<BaseURL>${req.protocol}://${req.get("host")}/api/segment?url=${encodeURIComponent(
+          new URL(p1, base).href
+        )}&amp;</BaseURL>`
+    );
+
+    // Rewrite initialization
+    mpd = mpd.replace(
+      /initialization="([^"]+)"/g,
+      (_, p1) =>
+        `initialization="${req.protocol}://${req.get("host")}/api/segment?url=${encodeURIComponent(
+          new URL(p1, base).href
+        )}"`
+    );
+
+    // Rewrite media
+    mpd = mpd.replace(
+      /media="([^"]+)"/g,
+      (_, p1) =>
+        `media="${req.protocol}://${req.get("host")}/api/segment?url=${encodeURIComponent(
+          new URL(p1, base).href
+        )}"`
+    );
 
     res.setHeader("Content-Type", "application/dash+xml");
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(mpd);
 
-    res.send(data);
-
-  } catch (err) {
-    res.status(500).send("Crash: " + err.toString());
+  } catch (e) {
+    res.status(500).send(e.toString());
   }
 });
 
-// =========================
-// IMPORTANT RAILWAY PORT
-// =========================
+// ==========================
+// SEGMENT PROXY
+// ==========================
+app.get("/api/segment", async (req, res) => {
+
+  const url = req.query.url;
+
+  if (!url) {
+    return res.status(400).send("Missing url");
+  }
+
+  try {
+
+    const headers = {};
+
+    if (req.headers.range) {
+      headers.Range = req.headers.range;
+    }
+
+    const upstream = await fetch(url, {
+      headers
+    });
+
+    res.status(upstream.status);
+
+    upstream.headers.forEach((v, k) => {
+
+      if (
+        k.toLowerCase() !== "content-encoding" &&
+        k.toLowerCase() !== "transfer-encoding"
+      ) {
+        res.setHeader(k, v);
+      }
+
+    });
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body).pipe(res);
+    } else {
+      res.end();
+    }
+
+  } catch (err) {
+    res.status(500).send(err.toString());
+  }
+
+});
+
+const { Readable } = require("stream");
+
 const port = process.env.PORT || 3000;
 
 app.listen(port, "0.0.0.0", () => {
-  console.log("Server running on port", port);
+  console.log("Running on", port);
 });
